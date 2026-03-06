@@ -2,47 +2,42 @@ import streamlit as st
 import pandas as pd
 import graphviz
 
-st.set_page_config(page_title="Generador de Organigramas", layout="wide")
+st.set_page_config(page_title="Validador de Organigramas", layout="wide")
 
 st.title("🌳 Generador Automático de Organigramas")
-st.write("Sube tu archivo Excel con las columnas: **ID Trabajador** e **ID Jefatura**.")
 
-# 1. Subida de archivo
 uploaded_file = st.file_uploader("Elige tu archivo Excel", type=["xlsx"])
 
 if uploaded_file:
     try:
-        df = pd.read_excel(uploaded_file)
+        df = pd.read_excel(uploaded_file, engine='openpyxl')
         
-        # Limpiar espacios en blanco por si acaso
-        df.columns = [c.strip() for c in df.columns]
-        col_id = df.columns[0] # Columna A
-        col_jefe = df.columns[1] # Columna B
+        # Limpiamos nombres de columnas y datos
+        df.columns = [str(c).strip() for c in df.columns]
+        col_id = df.columns[0]
+        col_jefe = df.columns[1]
 
-        # 2. Crear el gráfico
+        # Crear el gráfico
         dot = graphviz.Digraph(comment='Organigrama')
-        dot.attr(rankdir='TB', size='10')
-
-        # Estilo de los nodos
-        dot.attr('node', shape='box', style='filled', color='lightblue', fontname='Arial')
+        dot.attr(rankdir='TB', size='20,20!') # Aumentamos el límite de tamaño
+        dot.attr('node', shape='box', style='filled,rounded', color='#E1F5FE', fontname='Arial')
 
         for index, row in df.iterrows():
-            emp = str(row[col_id])
-            jefe = str(row[col_jefe])
+            emp = str(row[col_id]).strip()
+            jefe = str(row[col_jefe]).strip()
 
-            # Agregar el trabajador
-            dot.node(emp, emp)
+            if emp != 'nan' and emp != '':
+                dot.node(emp, emp)
+                if jefe != 'nan' and jefe != '' and jefe != 'None':
+                    dot.edge(jefe, emp)
 
-            # Si tiene jefe y no es un valor vacío, crear la conexión
-            if jefe and jefe.lower() != 'nan' and jefe != 'None' and jefe != '':
-                dot.edge(jefe, emp)
-
-        # 3. Mostrar resultados
         st.subheader("Visualización del Mapa:")
-        st.graphviz_chart(dot)
         
-        st.success("✅ Organigrama generado con éxito.")
+        # Usamos un contenedor para asegurar que se vea
+        with st.container():
+            st.graphviz_chart(dot, use_container_width=True)
+            
+        st.success("✅ Organigrama generado. Si no lo ves, intenta con un archivo más pequeño para probar.")
 
     except Exception as e:
-        st.error(f"Hubo un error al procesar el archivo: {e}")
-        st.info("Asegúrate de que la Columna A sea el ID y la Columna B el ID del Jefe.")
+        st.error(f"Error: {e}")
