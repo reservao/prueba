@@ -2,114 +2,72 @@ import streamlit as st
 import pandas as pd
 import graphviz
 
-st.set_page_config(page_title="Auditor de Organigramas", layout="wide")
+st.set_page_config(page_title="Auditor Maestro de Organigramas", layout="wide")
 
-st.title("🌳 Auditor Inteligente de Organigramas")
-st.markdown("""
-Esta herramienta te permite auditar tramos de control específicos.  
-Sube tu Excel y luego **selecciona una jefatura** para ver su equipo.
-""")
+# --- SECCIÓN 1: INSTRUCCIONES DE ESTRUCTURA ---
+st.title("🌳 Generador de Organigramas Masivos")
+with st.expander("📌 REQUISITOS DEL ARCHIVO EXCEL (Haz clic para ver)", expanded=True):
+    st.markdown("""
+    Para que el sistema funcione, tu archivo debe tener esta estructura exacta:
+    * **Columna A:** ID o Nombre del Trabajador (único).
+    * **Columna B:** ID o Nombre de la Jefatura a la que reporta.
+    * **El Jefe Máximo:** La celda de su jefatura (Columna B) debe estar **vacía**.
+    * **Formato:** Archivo `.xlsx` sin filas vacías al inicio.
+    """)
 
-# --- FUNCIONES DE AYUDA (Para no saturar el código principal) ---
-def obtener_subordinados(df, jefe_id, niveles=2):
-    """Busca recursivamente los subordinados de un jefe hasta N niveles."""
-    col_id = df.columns[0]
-    col_jefe = df.columns[1]
-    
-    subordinados = []
-    # Nivel 1: Directos
-    directos = df[df[col_jefe].astype(str).str.strip() == str(jefe_id).strip()][col_id].tolist()
-    subordinados.extend(directos)
-    
-    # Niveles siguientes
-    if niveles > 1:
-        for sub in directos:
-            subordinados.extend(obtener_subordinados(df, sub, niveles - 1))
-            
-    return list(set(subordinados)) # Evitar duplicados
-
-# --- APLICACIÓN PRINCIPAL ---
-uploaded_file = st.file_uploader("1. Sube tu archivo Excel (.xlsx)", type=["xlsx"])
+# --- SECCIÓN 2: CARGA Y PROCESAMIENTO ---
+uploaded_file = st.file_uploader("Sube tu archivo Excel aquí", type=["xlsx"])
 
 if uploaded_file:
     try:
-        # Cargar y limpiar datos
         df = pd.read_excel(uploaded_file, engine='openpyxl')
-        df = df.dropna(how='all')
+        df = df.dropna(how='all') # Eliminar filas vacías
         
-        # Asegurar que las columnas sean strings y no tengan espacios extra
         col_id = df.columns[0]
         col_jefe = df.columns[1]
-        df[col_id] = df[col_id].astype(str).str.strip()
-        df[col_jefe] = df[col_jefe].astype(str).str.strip()
 
-        # 2. Selección de Jefatura
+        # Configuración del motor gráfico para alta densidad
+        dot = graphviz.Digraph(format='svg') 
+        dot.attr(rankdir='TB', splines='ortho', nodesep='0.4', ranksep='0.6')
+        
+        # Estilo de los nodos para que no ocupen tanto espacio
+        dot.attr('node', shape='box', style='filled,rounded', 
+                 color='#2E86C1', fontcolor='white', fontname='Arial', fontsize='10')
+
+        # Construcción del árbol completo
+        for _, row in df.iterrows():
+            emp = str(row[col_id]).strip()
+            jefe = str(row[col_jefe]).strip()
+
+            if emp != 'nan' and emp != '':
+                dot.node(emp, emp)
+                if jefe != 'nan' and jefe != '' and jefe != 'None':
+                    dot.edge(jefe, emp)
+
+        # --- SECCIÓN 3: VISUALIZACIÓN Y DESCARGA ---
         st.divider()
-        st.subheader("2. Selecciona la Jefatura a auditar:")
+        st.subheader("Visualización del Árbol Completo")
+        st.info("💡 Tip: Si el gráfico es muy grande, usa el botón de la esquina superior derecha del mapa para ampliar, o descarga el PDF para hacer zoom.")
+
+        # Mostramos en SVG (esto permite que el texto sea nítido en la web)
+        st.graphviz_chart(dot, use_container_width=True)
+
+        st.divider()
+        st.subheader("📥 Descarga para Auditoría Detallada")
+        col1, col2 = st.columns(2)
         
-        # Crear lista única de jefes (excluyendo 'nan')
-        lista_jefes = df[col_jefe].unique().tolist()
-        lista_jefes = [j for j in lista_jefes if j.lower() != 'nan' and j != '']
-        lista_jefes.sort()
+        with col1:
+            st.download_button(
+                label="Descargar PDF (Zoom Infinito - Recomendado)",
+                data=dot.pipe(format='pdf'),
+                file_name="organigrama_completo.pdf",
+                mime="application/pdf"
+            )
         
-        jefe_seleccionado = st.selectbox("Elige un ID de Jefe:", ["-- Selecciona --"] + lista_jefes)
+        with col2:
+            st.write("El PDF te permitirá buscar nombres con `Ctrl + F` y ver detalles sin pixeles.")
 
-        if jefe_seleccionado != "-- Selecciona --":
-            # 3. Filtrar datos para el gráfico
-            st.divider()
-            st.subheader(f"Vista para la Jefatura: {jefe_seleccionado}")
-            
-            # Obtener subordinados hasta 3 niveles (suficiente para auditar)
-            ids_a_mostrar = obtener_subordinados(df, jefe_seleccionado, niveles=3)
-            ids_a_mostrar.append(jefe_seleccionado) # Incluir al jefe elegido
-            
-            # Filtrar el DataFrame original
-            df_filtrado = df[df[col_id].isin(ids_a_mostrar)]
-            
-            # 4. Generar el Gráfico Filtrado
-            dot = graphviz.Digraph(format='png')
-            dot.attr(rankdir='TB', nodesep='0.4', ranksep='0.6')
-            
-            # Estilo de los nodos (cuadros)
-            dot.attr('node', shape='rectangle', style='filled,rounded', 
-                     color='#2E86C1', fontcolor='white', fontname='Arial', fontsize='11')
-            
-            # Resaltar al jefe seleccionado
-            dot.node(jefe_seleccionado, jefe_seleccionado, color='#F39C12', fontcolor='black')
-
-            for _, row in df_filtrado.iterrows():
-                emp = str(row[col_id])
-                jefe = str(row[col_jefe])
-
-                # No volver a dibujar el nodo del jefe seleccionado
-                if emp != jefe_seleccionado:
-                    dot.node(emp, emp)
-                
-                # Crear conexión si ambos están en la lista a mostrar
-                if jefe in ids_a_mostrar and emp in ids_a_mostrar:
-                    if jefe != 'nan' and jefe != '':
-                        dot.edge(jefe, emp)
-
-            # 5. Mostrar y Descargar
-            st.image(dot.pipe(format='png'), use_container_width=False)
-            
-            with st.expander("📥 Opciones de descarga de alta calidad"):
-                st.write("Si el gráfico sigue siendo grande, descarga el PDF. Los PDFs no se pixelan.")
-                
-                # Descarga PNG (Imagen estándar)
-                st.download_button(
-                    label="Descargar esta vista (PNG)",
-                    data=dot.pipe(format='png'),
-                    file_name=f"equipo_{jefe_seleccionado}.png",
-                    mime="image/png"
-        )
-                # Descarga PDF (Lo mejor para imprimir o auditar con zoom)
-                st.download_button(
-                    label="Descargar esta vista (PDF - Alta Calidad)",
-                    data=dot.pipe(format='pdf'),
-                    file_name=f"equipo_{jefe_seleccionado}.pdf",
-                    mime="application/pdf"
-                )
+        st.success(f"✅ Se han procesado {len(df)} registros.")
 
     except Exception as e:
-        st.error(f"Hubo un error técnico. Revisa que tu Excel tenga los datos en las dos primeras columnas. Error: {e}")
+        st.error(f"Error en el procesamiento: {e}")
