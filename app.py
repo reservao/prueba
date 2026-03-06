@@ -4,25 +4,27 @@ import graphviz
 
 st.set_page_config(page_title="Validador de Organigramas", layout="wide")
 
-st.title("🌳 Generador Automático de Organigramas")
+st.title("🌳 Generador de Organigramas")
 
-uploaded_file = st.file_uploader("Elige tu archivo Excel", type=["xlsx"])
+uploaded_file = st.file_uploader("Sube tu archivo Excel", type=["xlsx"])
 
 if uploaded_file:
     try:
         df = pd.read_excel(uploaded_file, engine='openpyxl')
         
-        # Limpiamos nombres de columnas y datos
-        df.columns = [str(c).strip() for c in df.columns]
+        # Limpieza básica
+        df = df.dropna(how='all')
         col_id = df.columns[0]
         col_jefe = df.columns[1]
 
-        # Crear el gráfico
-        dot = graphviz.Digraph(comment='Organigrama')
-        dot.attr(rankdir='TB', size='20,20!') # Aumentamos el límite de tamaño
-        dot.attr('node', shape='box', style='filled,rounded', color='#E1F5FE', fontname='Arial')
+        # Configuración del Gráfico
+        # 'dot' es mejor para organigramas (jerarquía de arriba abajo)
+        dot = graphviz.Digraph(format='png') 
+        dot.attr(rankdir='TB', size='30,30')
+        dot.attr('node', shape='rectangle', style='filled,rounded', 
+                 color='#2E86C1', fontcolor='white', fontname='Arial')
 
-        for index, row in df.iterrows():
+        for _, row in df.iterrows():
             emp = str(row[col_id]).strip()
             jefe = str(row[col_jefe]).strip()
 
@@ -33,11 +35,23 @@ if uploaded_file:
 
         st.subheader("Visualización del Mapa:")
         
-        # Usamos un contenedor para asegurar que se vea
-        with st.container():
-            st.graphviz_chart(dot, use_container_width=True)
-            
-        st.success("✅ Organigrama generado. Si no lo ves, intenta con un archivo más pequeño para probar.")
+        # Intentar mostrarlo
+        st.graphviz_chart(dot)
+
+        # BOTÓN DE RESPALDO: Descarga el diagrama como imagen si no se ve arriba
+        st.divider()
+        st.write("¿No puedes ver el mapa arriba? Descárgalo aquí:")
+        
+        # Generar los datos de la imagen para descargar
+        png_data = dot.pipe(format='png')
+        st.download_button(
+            label="📥 Descargar Organigrama (PNG)",
+            data=png_data,
+            file_name="organigrama.png",
+            mime="image/png"
+        )
+
+        st.success("✅ Procesado correctamente.")
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error al procesar: {e}")
